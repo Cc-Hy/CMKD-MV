@@ -6,7 +6,8 @@ from .view_transformer import ViewTransformerLiftSplatShoot, \
     ViewTransformerLSSBEVDepth
 from .lss_fpn import FPN_LSS
 from .fpn import FPNForBEVDet
+from. scnet import SCNET
 
 __all__ = ['FPN', 'SECONDFPN', 'OutdoorImVoxelNeck',
            'ViewTransformerLiftSplatShoot', 'FPN_LSS', 'FPNForBEVDet',
-           'ViewTransformerLSSBEVDepth']
+           'ViewTransformerLSSBEVDepth', 'SCNET']

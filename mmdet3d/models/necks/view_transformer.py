@@ -292,7 +292,7 @@ class SELikeModule(nn.Module):
 
 @NECKS.register_module()
 class ViewTransformerLSSBEVDepth(ViewTransformerLiftSplatShoot):
-    def __init__(self, extra_depth_net, loss_depth_weight, se_config=dict(),
+    def __init__(self, extra_depth_net, loss_depth_weight=0, se_config=dict(),
                  dcn_config=dict(bias=True), **kwargs):
         super(ViewTransformerLSSBEVDepth, self).__init__(**kwargs)
         self.loss_depth_weight = loss_depth_weight
@@ -321,7 +321,10 @@ class ViewTransformerLSSBEVDepth(ViewTransformerLiftSplatShoot):
                                **se_config)
 
     def forward(self, input):
-        x, rots, trans, intrins, post_rots, post_trans, depth_gt = input
+        if len(input) == 7:
+            x, rots, trans, intrins, post_rots, post_trans, depth_gt = input
+        else:
+            x, rots, trans, intrins, post_rots, post_trans = input
         B, N, C, H, W = x.shape
         x = x.view(B * N, C, H, W)
 
@@ -349,4 +352,8 @@ class ViewTransformerLSSBEVDepth(ViewTransformerLiftSplatShoot):
         else:
             geom = self.get_geometry(rots, trans, intrins, post_rots, post_trans)
             bev_feat = self.voxel_pooling(geom, volume)
-        return bev_feat, depth_digit
+        
+        if len(input) == 7:
+            return bev_feat, depth_digit
+        else:
+            return bev_feat

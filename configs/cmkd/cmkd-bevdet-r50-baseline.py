@@ -19,7 +19,7 @@ data_config={
     'input_size': (256, 704),
     'src_size': (900, 1600),
     # Augmentation
-    'resize': (-0.06, 0.11),
+    'resize': (-0.06, 0.06),
     'rot': (-5.4, 5.4),
     'flip': True,
     'crop_h': (0.0, 0.0),
@@ -30,15 +30,17 @@ data_config={
 grid_config={
         'xbound': [-51.2, 51.2, 0.8],
         'ybound': [-51.2, 51.2, 0.8],
-        'zbound': [-10.0, 10.0, 20.0],
+        'zbound': [-5.0, 3.0, 0.8],
         'dbound': [1.0, 60.0, 1.0],}
 
 voxel_size = [0.1, 0.1, 0.2]
 
 numC_Trans=64
 
+num_z_bins = int((grid_config['zbound'][1] - grid_config['zbound'][0]) / grid_config['zbound'][2])
+
 model = dict(
-    type='BEVDet',
+    type='CMKD_BEVDet',
     img_backbone=dict(
         pretrained='torchvision://resnet50',
         type='ResNet',
@@ -61,13 +63,33 @@ model = dict(
                               grid_config=grid_config,
                               data_config=data_config,
                               numC_Trans=numC_Trans),
-    img_bev_encoder_backbone = dict(type='ResNetForBEVDet', numC_input=numC_Trans),
-    img_bev_encoder_neck = dict(type='FPN_LSS',
-                                in_channels=numC_Trans*8+numC_Trans*2,
-                                out_channels=256),
+    img_bev_encoder_backbone = dict(type='SCNET',
+                                num_bev_features = 256,
+                                channel_adjust_cfg=dict(
+                                    in_channels = numC_Trans * num_z_bins,
+                                    out_channels = 256,
+                                    kernel_size = 1,
+                                   stride = 1,
+                                ),),
+    pts_backbone=dict(
+        type='SECOND',
+        in_channels=256,
+        out_channels=[128, 256],
+        layer_nums=[5, 5],
+        layer_strides=[1, 2],
+        norm_cfg=dict(type='BN', eps=1e-3, momentum=0.01),
+        conv_cfg=dict(type='Conv2d', bias=False)),
+    pts_neck=dict(
+        type='SECONDFPN',
+        in_channels=[128, 256],
+        out_channels=[256, 256],
+        upsample_strides=[1, 2],
+        norm_cfg=dict(type='BN', eps=1e-3, momentum=0.01),
+        upsample_cfg=dict(type='deconv', bias=False),
+        use_conv_for_no_stride=True),
     pts_bbox_head=dict(
         type='CenterHead',
-        in_channels=256,
+        in_channels=512,
         tasks=[
             dict(num_class=1, class_names=['car']),
             dict(num_class=2, class_names=['truck', 'construction_vehicle']),
@@ -209,7 +231,7 @@ input_modality = dict(
     use_external=False)
 
 data = dict(
-    samples_per_gpu=8,
+    samples_per_gpu=6,
     workers_per_gpu=4,
     train=dict(
         type='CBGSDataset',
@@ -232,12 +254,20 @@ data = dict(
         modality=input_modality, img_info_prototype='bevdet'))
 
 # Optimizer
-optimizer = dict(type='AdamW', lr=2e-4, weight_decay=0.01)
-optimizer_config = dict(grad_clip=None)
+optimizer = dict(type='AdamW', lr=1e-4, weight_decay=0.01)
+optimizer_config = dict(grad_clip=dict(max_norm=10, norm_type=2))
 lr_config = dict(
-    policy='step',
-    warmup='linear',
-    warmup_iters=500,
-    warmup_ratio=0.001,
-    step=[16, 22])
+    policy='cyclic',
+    target_ratio=(5, 1e-5),
+    cyclic_times=1,
+    step_ratio_up=0.2,
+)
+momentum_config = dict(
+    policy='cyclic',
+    target_ratio=(0.85 / 0.95, 1),
+    cyclic_times=1,
+    step_ratio_up=0.2,
+)
+
+# runtime settings
 runner = dict(type='EpochBasedRunner', max_epochs=24)

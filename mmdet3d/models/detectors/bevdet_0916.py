@@ -1,9 +1,9 @@
 # Copyright (c) Phigent Robotics. All rights reserved.
 
+from tkinter.messagebox import NO
 import torch
 from mmcv.runner import force_fp32
 import torch.nn.functional as F
-import torch.nn as nn
 
 from mmdet.models import DETECTORS
 from .centerpoint import CenterPoint
@@ -11,8 +11,6 @@ from .. import builder
 from mmdet3d.models import backbones, build_model
 from .mvx_two_stage import MVXTwoStageDetector
 from mmcv.cnn import initialize
-from mmdet3d.models.utils import clip_sigmoid_keep_value as sigmoid
-
 @DETECTORS.register_module()
 class BEVDet(CenterPoint):
     def __init__(self, img_view_transformer, img_bev_encoder_backbone, img_bev_encoder_neck, **kwargs):
@@ -570,15 +568,7 @@ class BEVDepth4D(BEVDepth_Base, BEVDetSequentialES):
 
 @DETECTORS.register_module()
 class CMKD_BEVDet(CenterPoint):
-    def __init__(self, img_view_transformer, 
-                    img_bev_encoder_backbone=None, 
-                    img_bev_encoder_neck=None, 
-                    pts_backbone=None, 
-                    pts_neck=None, 
-                    bev_loss_cfg=None, 
-                    teacher_model_cfg=None, 
-                    res_reg_loss_cfg=None,
-                    **kwargs):
+    def __init__(self, img_view_transformer, img_bev_encoder_backbone=None, img_bev_encoder_neck=None, pts_backbone=None, pts_neck=None, bev_loss_cfg=None, teacher_model_cfg=None, **kwargs):
         super(CMKD_BEVDet, self).__init__(**kwargs)
         self.img_view_transformer = builder.build_neck(img_view_transformer)
         if img_bev_encoder_backbone:
@@ -604,12 +594,6 @@ class CMKD_BEVDet(CenterPoint):
             self.loss_bev_fun = builder.build_loss(bev_loss_cfg)
         else:
             self.loss_bev_fun = None
-        if res_reg_loss_cfg:
-            self.loss_res_reg_loss_fun = builder.build_loss(res_reg_loss_cfg)
-            self.loss_res_cls_loss_fun = QualityFocalLoss()
-            self.loss_res_cls_loss_fun.loss_weights = 0.2
-        else:
-            self.loss_res_reg_loss_fun=None
         # self.init_cfg = init_cfg
         if self.init_cfg:
             initialize(self, self.init_cfg)
@@ -687,80 +671,23 @@ class CMKD_BEVDet(CenterPoint):
         # bev loss
         if self.loss_bev_fun and self.teacher_model:
             with torch.no_grad():
-                if not self.loss_res_reg_loss_fun:
-                    bev_lidar = self.teacher_model.forward_teacher(points)
-                else:
-                    bev_lidar, logits_lidar = self.teacher_model.forward_teacher(points, res=True)
+                bev_lidar = self.teacher_model.forward_teacher(points)
             loss_bev = self.get_bev_loss(bev_img, bev_lidar)
-            losses.update((dict(loss_bev = loss_bev)))
+        losses.update((dict(loss_bev = loss_bev)))
         # rpn loss
         if not getattr(self,'pts_backbone',None):
             return losses
         x = self.pts_backbone(bev_img)
         x = self.pts_neck(x)
-        if not self.loss_res_reg_loss_fun:
-            losses_pts = self.forward_pts_train(x, gt_bboxes_3d,
-                                                gt_labels_3d, img_metas,
-                                                gt_bboxes_ignore)
-            losses.update(losses_pts)
-
-        else:
-            losses_pts, logits_img = self.forward_pts_train(x, gt_bboxes_3d,
-                                                gt_labels_3d, img_metas,
-                                                gt_bboxes_ignore, return_logits=True)
-            losses.update(losses_pts)
-
-            res_loss_cls = 0
-            res_loss_reg = 0
-            for i, task in enumerate(logits_lidar):
-                for j, level in enumerate(task):
-                    for k,v in level.items():
-                        if 'heatmap' in k:
-                            res_loss_cls += self.loss_res_cls_loss_fun(logits_img[i][j][k], sigmoid(v), pos_normalizer = (sigmoid(v)>=0.5).sum(), use_sigmoid=False).sum()
-                        else:
-                            #TODO: only pos position
-                            res_loss_reg += (self.loss_res_reg_loss_fun(logits_img[i][j][k], v) * sigmoid(level['heatmap'].sum(dim=1,keepdim=True))).mean()
-            losses.update(dict(
-                res_loss_cls = res_loss_cls * self.loss_res_cls_loss_fun.loss_weights,
-                res_loss_reg = res_loss_reg,
-            ))
-
+        losses_pts = self.forward_pts_train(x, gt_bboxes_3d,
+                                            gt_labels_3d, img_metas,
+                                            gt_bboxes_ignore)
+        losses.update(losses_pts)
         return losses
 
     @force_fp32()
     def get_bev_loss(self, bev_img, bev_lidar):
         return self.loss_bev_fun(bev_img, bev_lidar)
-
-    def forward_pts_train(self,
-                          pts_feats,
-                          gt_bboxes_3d,
-                          gt_labels_3d,
-                          img_metas,
-                          gt_bboxes_ignore=None,
-                          return_logits=False):
-        """Forward function for point cloud branch.
-
-        Args:
-            pts_feats (list[torch.Tensor]): Features of point cloud branch
-            gt_bboxes_3d (list[:obj:`BaseInstance3DBoxes`]): Ground truth
-                boxes for each sample.
-            gt_labels_3d (list[torch.Tensor]): Ground truth labels for
-                boxes of each sampole
-            img_metas (list[dict]): Meta information of samples.
-            gt_bboxes_ignore (list[torch.Tensor], optional): Ground truth
-                boxes to be ignored. Defaults to None.
-
-        Returns:
-            dict: Losses of each branch.
-        """
-        outs = self.pts_bbox_head(pts_feats)
-        loss_inputs = [gt_bboxes_3d, gt_labels_3d, outs]
-        losses = self.pts_bbox_head.loss(*loss_inputs)
-
-        if not return_logits:
-            return losses
-        else:
-            return losses, outs
 
     def forward_test(self, points=None, img_metas=None, img_inputs=None, **kwargs):
         """
@@ -826,30 +753,6 @@ class CMKD_BEVDet(CenterPoint):
         for result_dict, pts_bbox in zip(bbox_list, bbox_pts):
             result_dict['pts_bbox'] = pts_bbox
         return bbox_list
-
-
-# TODO: add to losses
-class QualityFocalLoss(nn.Module):
-    '''
-    input[B,M,C] not sigmoid 
-    target[B,M,C], sigmoid
-    '''
-    def __init__(self, beta = 2.0):
-
-        super(QualityFocalLoss, self).__init__()
-        self.beta = beta
-
-    def forward(self, input: torch.Tensor, target: torch.Tensor, pos_normalizer=torch.tensor(1.0), use_sigmoid=True):
-        
-        if use_sigmoid:
-            pred_sigmoid = torch.sigmoid(input)
-        else:
-            pred_sigmoid = input
-        scale_factor = pred_sigmoid-target
-        loss = F.binary_cross_entropy_with_logits(input, target, reduction='none')*(scale_factor.abs().pow(self.beta))
-        loss /= torch.clamp(pos_normalizer, min=1.0)
-        return loss
-
 
 
 @DETECTORS.register_module()
@@ -1098,22 +1001,11 @@ class CMKD_LIDAR(MVXTwoStageDetector):
     def forward_teacher(self,
         points=None,
         img=None,
-        img_metas=None,
-        res=False):
+        img_metas=None):
 
         voxels, num_points, coors = self.voxelize(points)
         voxel_features = self.pts_voxel_encoder(voxels, num_points, coors)
         batch_size = coors[-1, 0] + 1
-        bev_lidar = self.pts_middle_encoder(voxel_features, coors, batch_size)
+        x = self.pts_middle_encoder(voxel_features, coors, batch_size)
 
-        x = None
-        if res:
-            pass
-            x = self.pts_backbone(bev_lidar)
-            if self.with_pts_neck:
-                x = self.pts_neck(x)
-            x = self.pts_bbox_head(x)
-        if x:
-            return bev_lidar, x
-        else:
-            return bev_lidar
+        return x

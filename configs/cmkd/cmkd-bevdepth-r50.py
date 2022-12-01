@@ -18,8 +18,9 @@ data_config={
     'Ncams': 6,
     'input_size': (256, 704),
     'src_size': (900, 1600),
+
     # Augmentation
-    'resize': (-0.06, 0.11),
+    'resize': (-0.06, 0.06),
     'rot': (-5.4, 5.4),
     'flip': True,
     'crop_h': (0.0, 0.0),
@@ -30,15 +31,64 @@ data_config={
 grid_config={
         'xbound': [-51.2, 51.2, 0.8],
         'ybound': [-51.2, 51.2, 0.8],
-        'zbound': [-10.0, 10.0, 20.0],
+        'zbound': [-5.0, 3.0, 0.8],
         'dbound': [1.0, 60.0, 1.0],}
 
 voxel_size = [0.1, 0.1, 0.2]
 
+# load_from = 'work_dirs/cmkd-bevdet-r50-bev/latest.pth'
+load_from = 'checkpoints/bevdepth_bev_and_bevdet_head.pth'
+
 numC_Trans=64
 
+num_z_bins = int((grid_config['zbound'][1] - grid_config['zbound'][0]) / grid_config['zbound'][2])
+
+model_lidar = dict(
+    type='CMKD_LIDAR',
+    pts_voxel_layer=dict(
+        max_num_points=10, voxel_size=voxel_size, max_voxels=(90000, 120000), point_cloud_range=point_cloud_range),
+    pts_voxel_encoder=dict(type='HardSimpleVFE', num_features=5),
+    pts_middle_encoder=dict(
+        type='SparseEncoder',
+        in_channels=5,
+        sparse_shape=[41, 1024, 1024],
+        output_channels=128,
+        order=('conv', 'norm', 'act'),
+        encoder_channels=((16, 16, 32), (32, 32, 64), (64, 64, 128), (128,
+                                                                      128)),
+        encoder_paddings=((0, 0, 1), (0, 0, 1), (0, 0, [0, 1, 1]), (0, 0)),
+        block_type='basicblock'),
+    # model training and testing settings
+    train_cfg=dict(
+        pts=dict(
+            grid_size=[1024, 1024, 40],
+            voxel_size=voxel_size,
+            out_size_factor=8,
+            dense_reg=1,
+            gaussian_overlap=0.1,
+            max_objs=500,
+            min_radius=2,
+            code_weights=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.2]),
+            point_cloud_range=point_cloud_range),
+    test_cfg=dict(
+        pts=dict(
+            post_center_limit_range=[-61.2, -61.2, -10.0, 61.2, 61.2, 10.0],
+            max_per_img=500,
+            max_pool_nms=False,
+            min_radius=[4, 12, 10, 1, 0.85, 0.175],
+            score_threshold=0.1,
+            out_size_factor=8,
+            voxel_size=voxel_size[:2],
+            nms_type='rotate',
+            pre_max_size=1000,
+            post_max_size=83,
+            nms_thr=0.2,
+            pc_range=point_cloud_range)),
+    init_cfg = dict(type='Pretrained',
+        checkpoint='checkpoints/centerpoint_01voxel_second_secfpn_circlenms_4x8_cyclic_20e_nus_20210815_085857-9ba7f3a5.pth'),)
+
 model = dict(
-    type='BEVDet',
+    type='CMKD_BEVDet',
     img_backbone=dict(
         pretrained='torchvision://resnet50',
         type='ResNet',
@@ -57,17 +107,42 @@ model = dict(
         num_outs=1,
         start_level=0,
         out_ids=[0]),
-    img_view_transformer=dict(type='ViewTransformerLiftSplatShoot',
+    img_view_transformer=dict(type='ViewTransformerLSSBEVDepth',
                               grid_config=grid_config,
                               data_config=data_config,
-                              numC_Trans=numC_Trans),
-    img_bev_encoder_backbone = dict(type='ResNetForBEVDet', numC_input=numC_Trans),
-    img_bev_encoder_neck = dict(type='FPN_LSS',
-                                in_channels=numC_Trans*8+numC_Trans*2,
-                                out_channels=256),
+                              numC_Trans=numC_Trans,
+                              extra_depth_net=dict(type='ResNetForBEVDet',
+                                                   numC_input=256,
+                                                   num_layer=[3,],
+                                                   num_channels=[256,],
+                                                   stride=[1,])),
+    img_bev_encoder_backbone = dict(type='SCNET',
+                                num_bev_features = 256,
+                                channel_adjust_cfg=dict(
+                                    in_channels = numC_Trans * num_z_bins,
+                                    out_channels = 256,
+                                    kernel_size = 1,
+                                   stride = 1,
+                                ),),
+    pts_backbone=dict(
+        type='SECOND',
+        in_channels=256,
+        out_channels=[128, 256],
+        layer_nums=[5, 5],
+        layer_strides=[1, 2],
+        norm_cfg=dict(type='BN', eps=1e-3, momentum=0.01),
+        conv_cfg=dict(type='Conv2d', bias=False)),
+    pts_neck=dict(
+        type='SECONDFPN',
+        in_channels=[128, 256],
+        out_channels=[256, 256],
+        upsample_strides=[1, 2],
+        norm_cfg=dict(type='BN', eps=1e-3, momentum=0.01),
+        upsample_cfg=dict(type='deconv', bias=False),
+        use_conv_for_no_stride=True),
     pts_bbox_head=dict(
         type='CenterHead',
-        in_channels=256,
+        in_channels=512,
         tasks=[
             dict(num_class=1, class_names=['car']),
             dict(num_class=2, class_names=['truck', 'construction_vehicle']),
@@ -94,6 +169,11 @@ model = dict(
         loss_bbox=dict(type='L1Loss', reduction='mean', loss_weight=0.25),
         norm_bbox=True),
     # model training and testing settings
+    bev_loss_cfg=dict(
+        type='MSELoss',
+        loss_weight=50
+    ),
+    teacher_model_cfg = model_lidar,
     train_cfg=dict(
         pts=dict(
             point_cloud_range=point_cloud_range,
@@ -124,24 +204,32 @@ model = dict(
             nms_type=['rotate', 'rotate', 'rotate', 'circle', 'rotate', 'rotate'],
             nms_thr=[0.2, 0.2, 0.2, 0.2, 0.2, 0.5],
             nms_rescale_factor=[1.0, [0.7, 0.7], [0.4, 0.55], 1.1, [1.0, 1.0], [4.5, 9.0]]
-        )))
+        )),
+    # init_cfg = dict(type='Pretrained',
+    #     checkpoint='checkpoints/centerpoint_01voxel_second_secfpn_circlenms_4x8_cyclic_20e_nus_20210815_085857-9ba7f3a5.pth'),
 
+)
 
 # Data
 dataset_type = 'NuScenesDataset'
 data_root = 'data/nuscenes/'
 file_client_args = dict(backend='disk')
 
-
 train_pipeline = [
     dict(type='LoadMultiViewImageFromFiles_BEVDet', is_train=True, data_config=data_config),
     dict(
         type='LoadPointsFromFile',
-        dummy=True,
         coord_type='LIDAR',
         load_dim=5,
         use_dim=5,
         file_client_args=file_client_args),
+    dict(
+        type='LoadPointsFromMultiSweeps',
+        sweeps_num=4,
+        use_dim=[0, 1, 2, 3, 4],
+        file_client_args=file_client_args,
+        pad_empty_sweeps=True,
+        remove_close=True),
     dict(type='LoadAnnotations3D', with_bbox_3d=True, with_label_3d=True),
     dict(
         type='GlobalRotScaleTrans',
@@ -158,7 +246,7 @@ train_pipeline = [
     dict(type='ObjectRangeFilter', point_cloud_range=point_cloud_range),
     dict(type='ObjectNameFilter', classes=class_names),
     dict(type='DefaultFormatBundle3D', class_names=class_names),
-    dict(type='Collect3D', keys=['img_inputs', 'gt_bboxes_3d', 'gt_labels_3d'],
+    dict(type='Collect3D', keys=['img_inputs', 'gt_bboxes_3d', 'gt_labels_3d', 'points'],
          meta_keys=('filename', 'ori_shape', 'img_shape', 'lidar2img',
                             'depth2img', 'cam2img', 'pad_shape',
                             'scale_factor', 'flip', 'pcd_horizontal_flip',
@@ -209,7 +297,7 @@ input_modality = dict(
     use_external=False)
 
 data = dict(
-    samples_per_gpu=8,
+    samples_per_gpu=6,
     workers_per_gpu=4,
     train=dict(
         type='CBGSDataset',
@@ -232,12 +320,30 @@ data = dict(
         modality=input_modality, img_info_prototype='bevdet'))
 
 # Optimizer
-optimizer = dict(type='AdamW', lr=2e-4, weight_decay=0.01)
-optimizer_config = dict(grad_clip=None)
+# optimizer = dict(type='AdamW', lr=2e-4, weight_decay=0.01)
+# optimizer_config = dict(grad_clip=None)
+# lr_config = dict(
+#     policy='step',
+#     warmup='linear',
+#     warmup_iters=500,
+#     warmup_ratio=0.001,
+#     step=[16, 22])
+# runner = dict(type='EpochBasedRunner', max_epochs=24)
+
+optimizer = dict(type='AdamW', lr=1e-4, weight_decay=0.01)
+optimizer_config = dict(grad_clip=dict(max_norm=10, norm_type=2))
 lr_config = dict(
-    policy='step',
-    warmup='linear',
-    warmup_iters=500,
-    warmup_ratio=0.001,
-    step=[16, 22])
+    policy='cyclic',
+    target_ratio=(5, 1e-5),
+    cyclic_times=1,
+    step_ratio_up=0.2,
+)
+momentum_config = dict(
+    policy='cyclic',
+    target_ratio=(0.85 / 0.95, 1),
+    cyclic_times=1,
+    step_ratio_up=0.2,
+)
+
+# runtime settings
 runner = dict(type='EpochBasedRunner', max_epochs=24)
