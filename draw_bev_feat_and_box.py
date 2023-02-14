@@ -6,14 +6,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-# change
-# point_cloud_range = [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0]
-point_cloud_range = [2, -30.08, -3.0, 46.8, 30.08, 1.0]
-voxel_size = [0.04, 0.04]
-feature_map_stride = 4
-i = 0
-feat =  bev_lidar  #B,C,W,H
-
 
 
 def featuremap_to_greymap(feature_map):
@@ -76,6 +68,17 @@ rgb = greymap_to_rgbimg(gray.cpu().detach().numpy())
 
 plt.imshow(rgb)
 
+
+
+# change
+# point_cloud_range = [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0]
+point_cloud_range = [2, -30.08, -3.0, 46.8, 30.08, 1.0]
+voxel_size = [0.04, 0.04]
+feature_map_stride = 4
+i = 0
+feat =  bev_lidar  #B,C,W,H
+
+
 gtb = gt_bboxes_3d[i]
 gtc = gtb.corners   # N,8,3
 
@@ -90,3 +93,16 @@ for j in range(gtc.shape[0]):
     cv2.polylines(rgb,[corner_coor_int],True,(0,255,0))
 
 plt.imshow(rgb)
+
+
+
+
+# vis nuscense
+
+from nuscenes.nuscenes import NuScenes
+nusc = NuScenes(version='v1.0-trainval', dataroot='data/nuscenes')
+sample_id = img_metas[0]['sample_idx']
+sample = nusc.get('sample', sample_id)
+for k,v in sample['data'].items():
+    if 'CAM' in k:
+        nusc.render_sample_data(nusc.get('sample_data', v)['token'])

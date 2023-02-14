@@ -806,6 +806,8 @@ class CMKD_BEVDet(CenterPoint):
 
     def simple_test(self, points, img_metas, img=None, rescale=False):
         """Test function without augmentaiton."""
+        if img_metas[0]['sample_idx'] =='5abd3d15e63c44a8a8189a6e70a496ef':
+            print('stop')
         img_feats, _ = self.extract_feat(points, img=img, img_metas=img_metas)
         x = self.pts_backbone(img_feats)
         x = self.pts_neck(x)
