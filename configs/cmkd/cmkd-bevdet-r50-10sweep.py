@@ -1,5 +1,3 @@
-# Copyright (c) Phigent Robotics. All rights reserved.
-
 _base_ = ['../_base_/datasets/nus-3d.py',
           '../_base_/default_runtime.py']
 # Global
@@ -35,9 +33,6 @@ grid_config={
         'dbound': [1.0, 60.0, 1.0],}
 
 voxel_size = [0.1, 0.1, 0.2]
-
-# load_from = 'work_dirs/cmkd-bevdet-r50-bev/latest.pth'
-load_from = 'work_dirs/cmkd-bevdepth-r50/latest.pth'
 
 numC_Trans=64
 
@@ -382,19 +377,19 @@ data = dict(
 # runner = dict(type='EpochBasedRunner', max_epochs=24)
 
 optimizer = dict(type='AdamW', lr=1e-4, weight_decay=0.01)
-optimizer_config = dict(grad_clip=dict(max_norm=10, norm_type=2))
+optimizer_config = dict(grad_clip=dict(max_norm=35, norm_type=2))
 lr_config = dict(
     policy='cyclic',
-    target_ratio=(2, 1e-5),
+    target_ratio=(10, 1e-4),
     cyclic_times=1,
-    step_ratio_up=0.2,
+    step_ratio_up=0.4,
 )
 momentum_config = dict(
     policy='cyclic',
     target_ratio=(0.85 / 0.95, 1),
     cyclic_times=1,
-    step_ratio_up=0.2,
+    step_ratio_up=0.4,
 )
 
 # runtime settings
-runner = dict(type='EpochBasedRunner', max_epochs=6)
+runner = dict(type='EpochBasedRunner', max_epochs=24)

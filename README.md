@@ -1,4 +1,16 @@
-# BEVDet
+# CMKD: Cross-Modality Knowledge Distillation Network for Monocular 3D Object Detection (ECCV 2022 Oral)
+
+
+CMKD for Nuscenes dataset. For more details, please refer to [this link](https://github.com/Cc-Hy/CMKD).
+
+This repo is build on [BEVDet](https://github.com/HuangJunJie2017/BEVDet) and [MMDetection3D](https://github.com/open-mmlab/mmdetection3d). We are very grateful for the excellent work.
+
+## Get Started
+#### Installation and Data Preparation
+Please see [getting_started.md](docs/getting_started.md) to use this repo.
+
+
+<!-- # BEVDet
 
 
  ![Illustrating the performance of the proposed BEVDet on the nuScenes val set](./resources/nds-fps.png)
@@ -92,4 +104,4 @@ If this work is helpful for your research, please consider citing the following 
   journal={arXiv preprint arXiv:2112.11790},
   year={2021}
 }
-```
+``` -->

@@ -1,7 +1,7 @@
-Modify from the official mmdet3d [getting_started.md](https://github.com/open-mmlab/mmdetection3d/blob/master/docs/en/getting_started.md)
+Modify from [BEVDet](https://github.com/HuangJunJie2017/BEVDet)
 
 # Prerequisites
-BEVDet is developed with the following version of modules.
+Our method is developed with the following version of modules.
 - Linux or macOS (Windows is not currently officially supported)
 - Python 3.7
 - PyTorch 1.9.0
@@ -17,8 +17,8 @@ BEVDet is developed with the following version of modules.
 **a. Create a conda virtual environment and activate it.**
 
 ```shell
-conda create -n bevdet python=3.7 -y
-conda activate bevdet
+conda create -n cmkd python=3.7 -y
+conda activate cmkd
 ```
 
 **b. Install PyTorch and torchvision following the [official instructions](https://pytorch.org/).**
@@ -45,14 +45,14 @@ pip install mmsegmentation==0.14.1
 ```
 
 
-**f. Clone the BEVDet repository.**
+**f. Clone the CMKD-MV repository.**
 
 ```shell
-git clone https://github.com/HuangJunJie2017/BEVDet.git
-cd BEVDet
+git clone https://github.com/Cc-Hy/CMKD-MV
+cd CMKD-MV
 ```
 
-**g.Install build requirements and then install BEVDet.**
+**g.Install build requirements and then install CMKD-MV.**
 
 ```shell
 pip install -v -e .  # or "python setup.py develop"
@@ -64,8 +64,8 @@ pip install -v -e .  # or "python setup.py develop"
 Here is a full script for setting up MMdetection3D with conda.
 
 ```shell
-conda create -n bevdet python=3.7 -y
-conda activate bevdet
+conda create -n cmkd python=3.7 -y
+conda activate cmkd
 
 # install latest PyTorch prebuilt with the default prebuilt CUDA version (usually the latest)
 conda install -c pytorch pytorch torchvision -y
@@ -79,9 +79,9 @@ pip install mmdet==2.14.0
 # install mmsegmentation
 pip install mmsegmentation==0.14.1
 
-# install BEVDet
-git clone https://github.com/HuangJunJie2017/BEVDet.git
-cd BEVDet
+# install CMKD
+git clone https://github.com/Cc-Hy/CMKD-MV
+cd CMKD-MV
 pip install -v -e .
 ```
 
